@@ -20,7 +20,7 @@ void init(){
 }
 #define TEST_SIZE 100000000
 int main(){
-	/*
+	
 	int i,times,current_time;
 	size_t size;
 	clock_t total_time = 0;
@@ -45,6 +45,7 @@ int main(){
 	total_time /= 10;
 	printf("decode cost:%f s\n",(double)(total_time)/CLOCKS_PER_SEC);
 
+	/*
 	for (int i = 0; i < 10; i++) {
 		printf("%d: ", i * 10);
 			
@@ -52,18 +53,15 @@ int main(){
 			printf("%x ", decoded[i * 10 + j]);
 		printf("\n");
 	}
-		
-	getchar();
 	*/
-
-
-	int i;
-	int j;
-	for (i = 0; i < TEST_SIZE; i++)
-		for (j = 0; j < 10000; j++);
 
 	printf("Over\n");
 	getchar();
+	
+
+
+
+	
 
 
 	return 0;
