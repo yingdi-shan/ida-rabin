@@ -45,16 +45,9 @@ int main(){
 	total_time /= 10;
 	printf("decode cost:%f s\n",(double)(total_time)/CLOCKS_PER_SEC);
 
-	/*
-	for (int i = 0; i < 10; i++) {
-		printf("%d: ", i * 10);
-			
-		for (int j = 0; j < 10; j++)
-			printf("%x ", decoded[i * 10 + j]);
-		printf("\n");
-	}
-	*/
 
+	
+#pragma omp parallel
 	printf("Over\n");
 	getchar();
 	
