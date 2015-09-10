@@ -1,60 +1,81 @@
 #include "ec-method.h"
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <stdio.h>
-#include <omp.h>
-#define DATA_SIZE (1<<29)
-#define COLUMN (8)
+#include <sys/time.h>
+#include <sys/sysinfo.h>
+#define DATA_SIZE (1<<30)
+#define COLUMN (64)
 uint8_t *decoded,*data;
-uint8_t * output[COLUMN];
-uint32_t row[COLUMN];
+uint8_t * output[COLUMN/4*5];
+uint32_t row[COLUMN/4*5];
 void init(){
 	int i;
 	decoded = (uint8_t *)malloc(DATA_SIZE);
 	data = (uint8_t *)malloc(DATA_SIZE);
-	
-	for(i=0;i<COLUMN;i++)
+
+	for(i=0;i<COLUMN/4*5;i++)
 		output[i] = (uint8_t *)malloc(DATA_SIZE/COLUMN),row[i]=i;
 	ec_method_initialize();
-	memset(data,0xaa,DATA_SIZE);
+    
+    memset(data,0xac,sizeof(uint8_t)*DATA_SIZE);
+
+    //for(i=0;i<DATA_SIZE;i++)
+    //    data[i] = rand() % 256;
 }
-#define TEST_SIZE 100000000
-int main(){
-	
-	int i,times,current_time;
+
+
+int main(int argc,char *argv[]){
+
+	int i,j,times;
 	size_t size;
-	clock_t total_time = 0;
+	struct timeval begin,end,result;
+	double total_time;
+
+
 	init();
+    printf("Finish init\n");
 
-	for (times = 0; times < 10; times++) {
-		current_time = clock();
-		for (i = 0; i < COLUMN; i++) {
-			size = ec_method_encode(DATA_SIZE, COLUMN, i, data, output[i]);
-		}
-		total_time += clock() - current_time;
-	}
-	total_time /= 10;
-	printf("encode cost:%f s\n",(double)(total_time)/CLOCKS_PER_SEC);
-	
-	total_time = 0;
-	for (times = 0; times < 10; times++) {
-		current_time = clock();
-		ec_method_decode(size, COLUMN, row, output, decoded);
-		total_time += clock() - current_time;
-	}
-	total_time /= 10;
-	printf("decode cost:%f s\n",(double)(total_time)/CLOCKS_PER_SEC);
+    gettimeofday(&begin,NULL);
+/*    for (i = 0; i < COLUMN/4*5; i++) {
+         if(argc > 1 && !strcmp(argv[1],"-p"))
+            size = ec_method_parallel_encode(DATA_SIZE, COLUMN, i, data, output[i],get_nprocs());
+         else
+            size = ec_method_encode(DATA_SIZE, COLUMN, i, data, output[i]);
 
+    }
+*/
+    if(argc > 1 && !strcmp(argv[1],"-p"))
+        size = ec_method_batch_parallel_encode(DATA_SIZE, COLUMN, COLUMN/4*5, data, output,get_nprocs());
+     else
+        size = ec_method_batch_encode(DATA_SIZE, COLUMN, COLUMN/4*5, data, output);
 
-	
-#pragma omp parallel
-	printf("Over\n");
-	getchar();
-	
+    gettimeofday(&end,NULL);
+    timersub(&end,&begin,&result);
+
+	printf("%sencode cost:%ld.%06lds\n",(argc>1 && !strcmp(argv[1],"-p")?"parallel ":""),result.tv_sec,result.tv_usec);
 
 
 
-	
+    gettimeofday(&begin,NULL);
+    if(argc > 1 && !strcmp(argv[1],"-p"))
+        ec_method_parallel_decode(size, COLUMN, row, output, decoded,get_nprocs());
+    else
+        ec_method_decode(size,COLUMN,row,output,decoded);
+
+    gettimeofday(&end,NULL);
+    timersub(&end,&begin,&result);
+
+	printf("%sdecode cost:%ld.%06lds\n",(argc>1 && !strcmp(argv[1],"-p")?"parallel ":""),result.tv_sec,result.tv_usec);
+
+    for(i=0;i<10;i++){
+        printf("%d :",i*10);
+        for(j=0;j<10;j++)
+            printf("%x ",decoded[i*10+j]);
+        printf("\n");
+    }
+
 
 
 	return 0;

@@ -14,7 +14,7 @@
 #include "ec-gf.h"
 #include <stdio.h>
 /* Determines the maximum size of the matrix used to encode/decode data */
-#define EC_METHOD_MAX_FRAGMENTS 16
+#define EC_METHOD_MAX_FRAGMENTS 64
 /* Determines the maximum number of usable elements in the Galois Field */
 #define EC_METHOD_MAX_NODES     (EC_GF_SIZE - 1)
 
