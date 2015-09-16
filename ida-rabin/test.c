@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/sysinfo.h>
-#define DATA_SIZE (1<<30)
-#define COLUMN (64)
+#define DATA_SIZE (1<<28)
+#define COLUMN (16)
 uint8_t *decoded,*data;
 uint8_t * output[COLUMN/4*5];
 uint32_t row[COLUMN/4*5];
@@ -19,10 +19,9 @@ void init(){
 		output[i] = (uint8_t *)malloc(DATA_SIZE/COLUMN),row[i]=i;
 	ec_method_initialize();
     
-    memset(data,0xac,sizeof(uint8_t)*DATA_SIZE);
 
-    //for(i=0;i<DATA_SIZE;i++)
-    //    data[i] = rand() % 256;
+   for(i=0;i<DATA_SIZE;i++)
+        data[i] = rand() % 256;
 }
 
 
@@ -55,6 +54,13 @@ int main(int argc,char *argv[]){
     timersub(&end,&begin,&result);
 
 	printf("%sencode cost:%ld.%06lds\n",(argc>1 && !strcmp(argv[1],"-p")?"parallel ":""),result.tv_sec,result.tv_usec);
+    for(i=0;i<100;i++){
+        printf("%d :",i*10);
+        for(j=0;j<10;j++)
+            printf("%x ",output[15][i*10+j]);
+        printf("\n");
+    }
+
 
 
 
@@ -72,7 +78,7 @@ int main(int argc,char *argv[]){
     for(i=0;i<10;i++){
         printf("%d :",i*10);
         for(j=0;j<10;j++)
-            printf("%x ",decoded[i*10+j]);
+            printf("%x:%x ",data[i*10+j],decoded[i*10+j]);
         printf("\n");
     }
 

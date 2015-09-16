@@ -149,7 +149,7 @@ static void* ec_method_batch_single_encode(void * param)
                 in_ptr += EC_METHOD_CHUNK_SIZE;
             }
         }
-        in += EC_METHOD_CHUNK_SIZE;
+        in += EC_METHOD_CHUNK_SIZE * columns;
     }
 }
 size_t ec_method_batch_parallel_encode(size_t size, uint32_t columns, uint32_t total_rows, uint8_t * in, uint8_t ** out,int processor_count)
