@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/sysinfo.h>
-#define DATA_SIZE (1<<28)
+#define DATA_SIZE (1<<24)
 #define COLUMN (64)
 uint8_t *decoded,*data;
 uint8_t * output[COLUMN/4*5];
@@ -21,7 +21,7 @@ void init(){
     
 
    for(i=0;i<DATA_SIZE;i++)
-        data[i] = rand() % 256;
+        data[i] = rand()%256;
 }
 
 
@@ -57,7 +57,7 @@ int main(int argc,char *argv[]){
     for(i=0;i<100;i++){
         printf("%d :",i*10);
         for(j=0;j<10;j++)
-            printf("%x ",output[0][i*10+j]);
+            printf("%x:%x ",output[1][i*10+j],output[2][i*10+j]);
         printf("\n");
     }
 
