@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/sysinfo.h>
-#define DATA_SIZE (1<<28)
+#define DATA_SIZE (1<<30)
 #define COLUMN (64)
 uint8_t *decoded,*data;
 uint8_t * output[COLUMN/4*5];
@@ -21,7 +21,6 @@ void init(){
     for(i=0;i<DATA_SIZE;i++)
         data[i] = rand()%256;
 }
-
 
 int main(int argc,char *argv[]){
 
@@ -43,7 +42,7 @@ int main(int argc,char *argv[]){
 	printf("encode cost:%ld.%06lds\n",result.tv_sec,result.tv_usec);
     gettimeofday(&begin,NULL);
 
-     ec_method_decode(size,COLUMN,row,output,decoded);
+    ec_method_decode(size,COLUMN,row,output,decoded);
 
     gettimeofday(&end,NULL);
     timersub(&end,&begin,&result);

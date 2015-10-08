@@ -345,60 +345,50 @@ __global__ void encode_batch_kernel(uint32_t columns,uint32_t total_rows,uint8_t
 size_t ec_method_batch_encode(size_t size, uint32_t columns, uint32_t total_rows,
         uint8_t * in, uint8_t ** out)
 {
-		const int number_of_stream = 8;
-		uint8_t* cuda_in[number_of_stream],*cuda_out[number_of_stream];
+
+		uint8_t* cuda_in[NUMBER_OF_STREAM],*cuda_out[NUMBER_OF_STREAM];
+
 		long long memory_trunk_size = (1<<18) *columns;
 
-
-		cudaStream_t streams[number_of_stream];
-		for(int i=0;i<number_of_stream;i++)
+		cudaStream_t streams[NUMBER_OF_STREAM];
+		for(int i=0;i<NUMBER_OF_STREAM;i++)
 			cudaStreamCreate(&streams[i]);
 
 		int memory_trunk_count = (size+memory_trunk_size-1)/(memory_trunk_size);
 
-		for(int s=0;s<number_of_stream;s++){
+		for(int s=0;s<NUMBER_OF_STREAM;s++){
 			cudaMalloc(&cuda_in[s],memory_trunk_size);
 			cudaMalloc(&cuda_out[s],memory_trunk_size/columns*total_rows);
 		}
 
-		for(int round=0;round<(memory_trunk_count+number_of_stream-1)/number_of_stream;round++){
+		for(int round=0;round<(memory_trunk_count+NUMBER_OF_STREAM-1)/NUMBER_OF_STREAM;round++){
 
-				for(int s=0;s<number_of_stream;s++){
+				int max_stream = min(NUMBER_OF_STREAM,memory_trunk_count - round*NUMBER_OF_STREAM);
 
-					int trunk_id = round*number_of_stream +s;
-					if(trunk_id >= memory_trunk_count)
-						break;
-					long long left_size = size-trunk_id*memory_trunk_size;
-					long long size_trunk = min(memory_trunk_size,left_size);
+				for(int s=0;s<max_stream;s++){
+					int trunk_id = round * NUMBER_OF_STREAM + s;
+					long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
 
 					cudaMemcpyAsync(cuda_in[s],in+trunk_id*memory_trunk_size,size_trunk,cudaMemcpyHostToDevice,streams[s]);
 				}
-				for(int s=0;s<number_of_stream;s++){
-
-					int trunk_id = round*number_of_stream +s;
-					if(trunk_id >= memory_trunk_count)
-						break;
-					long long left_size = size-trunk_id*memory_trunk_size;
-					long long size_trunk = min(memory_trunk_size,left_size);
+				for(int s=0;s<max_stream;s++){
+					int trunk_id = round * NUMBER_OF_STREAM + s;
+					long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
 
 					dim3 threadsPerBlock (64,2);
 					dim3 blocksPerGrid (size_trunk /columns / TRUNK_SIZE,((total_rows+1)/2));
 					encode_batch_kernel<<<blocksPerGrid,threadsPerBlock,0,streams[s]>>>(columns,total_rows,cuda_in[s],cuda_out[s],size_trunk);
 				}
-				for(int s=0;s<number_of_stream;s++){
-					int trunk_id = round*number_of_stream +s;
-					if(trunk_id >= memory_trunk_count)
-						break;
-					long long left_size = size-trunk_id*memory_trunk_size;
-					long long size_trunk = min(memory_trunk_size,left_size);
+				for(int s=0;s<max_stream;s++){
+					int trunk_id = round * NUMBER_OF_STREAM + s;
+					long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
 
 					for(int i=0;i<total_rows;i++)
 						cudaMemcpyAsync(out[i]+trunk_id*memory_trunk_size/columns,cuda_out[s]+i*size_trunk/columns,size_trunk/columns,cudaMemcpyDeviceToHost,streams[s]);
-
 				}
 		}
 
-		for(int s=0;s<number_of_stream;s++){
+		for(int s=0;s<NUMBER_OF_STREAM;s++){
 			cudaFree(cuda_in[s]);
 			cudaFree(cuda_out[s]);
 		}
@@ -416,63 +406,61 @@ __global__ void decode_kernel(uint32_t columns,uint8_t* cuda_in,uint8_t *cuda_ou
 		encode_t * in =(encode_t *)cuda_in,*out = (encode_t *)cuda_out;
 		int inv_stride = columns +1;
 		int in_stride = size / sizeof(encode_t);
-		__shared__ encode_t mul_result[64];
+		__shared__ encode_t mul_result[2][64];
 		__shared__ uint8_t log[EC_GF_SIZE *2];
 		__shared__ uint8_t pow[EC_GF_SIZE *2];
-		mul_result[threadIdx.x] = 0;
-		for(int i=threadIdx.x*8;i<threadIdx.x*8+8;i++)
+
+
+		mul_result[threadIdx.y][threadIdx.x] = 0;
+		for(int i=threadIdx.x*8+threadIdx.y*4;i<threadIdx.x*8+threadIdx.y*4+4;i++)
 			pow[i] = GfPow_cuda[i],log[i] = GfLog_cuda[i];
 		__syncthreads();
 
 
-		for(int i=0;i<columns;i++){
-			mul_result[threadIdx.x] = 0;
-			__syncthreads();
-			last = 0;
-			j = 0;
-			int bit_index = threadIdx.x>>3;
-			int bit_off = threadIdx.x&0x07;
-			do{
-				while(j<columns && inverse[i*inv_stride+j] == 0)
-					j++;
-				if(j<columns){
-
-					inv = inverse[i*inv_stride+j];
-					value = pow[EC_GF_SIZE - 1 + log[last] - log[inv]];
-					last = inv;
-					encode_t temp = 0;
-
-					if(value!=0){
-						uint8_t mask = bitmatrix[value-1][bit_index];
-						for(int k=0;k<8;k++){
-								temp ^= ((mask & (1<<k)) ? mul_result[8*k+bit_off] : 0);
-						}
+		int i = blockIdx.y * blockDim.y + threadIdx.y;
+		mul_result[threadIdx.y][threadIdx.x] = 0;
+		__syncthreads();
+		last = 0;
+		j = 0;
+		int bit_index = threadIdx.x>>3;
+		int bit_off = threadIdx.x&0x07;
+		do{
+			while(j<columns && inverse[i*inv_stride+j] == 0)
+				j++;
+			if(j<columns){
+				inv = inverse[i*inv_stride+j];
+				value = pow[EC_GF_SIZE - 1 + log[last] - log[inv]];
+				last = inv;
+				encode_t temp = 0;
+				if(value!=0){
+					uint8_t mask = bitmatrix[value-1][bit_index];
+					for(int k=0;k<8;k++){
+							temp ^= ((mask & (1<<k)) ? mul_result[threadIdx.y][8*k+bit_off] : 0);
 					}
-					__syncthreads();
-					mul_result[threadIdx.x] = temp ^ in[off +j*in_stride +threadIdx.x];
-					__syncthreads();
-
-					j++;
 				}
-			}while(j<columns);
-
-			encode_t temp = 0;
-			if(last!=0){
-				uint8_t mask = bitmatrix[last-1][bit_index];
-				for(int k=0;k<8;k++){
-					temp ^= ((mask & (1<<k)) ? mul_result[8*k+bit_off] : 0);
-				}
+				__syncthreads();
+				mul_result[threadIdx.y][threadIdx.x] = temp ^ in[off +j*in_stride +threadIdx.x];
+				__syncthreads();
+				j++;
 			}
-			__syncthreads();
-			mul_result[threadIdx.x] = temp;
-			__syncthreads();
+		}while(j<columns);
 
-
-			out[off*columns+threadIdx.x+i*TRUNK_SIZE/sizeof(encode_t)] = mul_result[threadIdx.x];
-			__syncthreads();
-
-
+		encode_t temp = 0;
+		if(last!=0){
+			uint8_t mask = bitmatrix[last-1][bit_index];
+			for(int k=0;k<8;k++){
+				temp ^= ((mask & (1<<k)) ? mul_result[threadIdx.y][8*k+bit_off] : 0);
+			}
 		}
+		__syncthreads();
+		mul_result[threadIdx.y][threadIdx.x] = temp;
+		__syncthreads();
+
+
+		out[off*columns+threadIdx.x+i*TRUNK_SIZE/sizeof(encode_t)] = mul_result[threadIdx.y][threadIdx.x];
+		__syncthreads();
+
+
 
 }
 
@@ -494,10 +482,6 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint32_t * rows,
     inv[0] = (uint8_t *)malloc((columns + 1)*columns * sizeof(uint8_t));
     mtx[0] = (uint8_t *)malloc(columns*columns * sizeof(uint8_t ));
 
-    in_ptr = (uint8_t *)malloc(size * columns);
-
-    for(i=0;i<columns;i++)
-    	memcpy(in_ptr+size*i,in[i],size);
 
     for(i=0;i<columns;i++)
         inv[i] = (*inv + (columns+1) * i),mtx[i]=(*mtx + columns * i);
@@ -545,30 +529,65 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint32_t * rows,
         }
     }
 
-
-
-    uint8_t *cuda_in,*cuda_out;
-
-
-    cudaMalloc(&cuda_in,sizeof(uint8_t )*columns*size);
-    cudaMalloc(&cuda_out,size * columns * sizeof(uint8_t));
-
-
-    cudaMemcpy(cuda_in,in_ptr,sizeof(uint8_t )*columns*size,cudaMemcpyHostToDevice);
-
     cudaMemcpyToSymbol(inverse,*inv,sizeof(uint8_t) * columns *(columns+1));
 
-    printf("Begin to decode\n");
-	int threadsPerBlock = 64;
-    int blocksPerGrid = size/TRUNK_SIZE ;
+    uint8_t* cuda_in[NUMBER_OF_STREAM],*cuda_out[NUMBER_OF_STREAM];
 
-    decode_kernel<<<blocksPerGrid,threadsPerBlock>>>(columns,cuda_in,cuda_out,size);
-    cudaMemcpy(out,cuda_out,size  * columns * sizeof(uint8_t),cudaMemcpyDeviceToHost);
+    long long memory_trunk_size = (1<<18) ;
 
+    cudaStream_t streams[NUMBER_OF_STREAM];
+    for(int i=0;i<NUMBER_OF_STREAM;i++)
+    	cudaStreamCreate(&streams[i]);
 
-    cudaFree(cuda_in);
-    cudaFree(cuda_out);
+    int memory_trunk_count = (size+memory_trunk_size-1)/(memory_trunk_size);
 
+    for(int s=0;s<NUMBER_OF_STREAM;s++){
+    	cudaMalloc(&cuda_in[s],memory_trunk_size * columns);
+    	cudaMalloc(&cuda_out[s],memory_trunk_size * columns);
+    }
+
+    in_ptr = (uint8_t *)malloc(memory_trunk_size * columns *NUMBER_OF_STREAM);
+
+    for(int round=0;round<(memory_trunk_count+NUMBER_OF_STREAM-1)/NUMBER_OF_STREAM;round++){
+
+    		int max_stream = min(NUMBER_OF_STREAM,memory_trunk_count - round*NUMBER_OF_STREAM);
+
+    		for(int s=0;s<max_stream;s++){
+    			int trunk_id = round * NUMBER_OF_STREAM + s;
+    			long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
+
+    			for(i=0;i<columns;i++)
+    			    	memcpy(in_ptr + s*memory_trunk_size*columns + i*memory_trunk_size,in[i]+trunk_id*memory_trunk_size,size_trunk);
+    		}
+
+    		for(int s=0;s<max_stream;s++){
+    			int trunk_id = round * NUMBER_OF_STREAM + s;
+    			long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
+
+    			cudaMemcpyAsync(cuda_in[s],in_ptr + s*memory_trunk_size*columns,size_trunk * columns,cudaMemcpyHostToDevice,streams[s]);
+    		}
+    		for(int s=0;s<max_stream;s++){
+    			int trunk_id = round * NUMBER_OF_STREAM + s;
+    			long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
+
+    			dim3 threadsPerBlock (64,2);
+    			dim3 blocksPerGrid (size_trunk / TRUNK_SIZE,((columns+1)/2));
+    			decode_kernel<<<blocksPerGrid,threadsPerBlock,0,streams[s]>>>(columns,cuda_in[s],cuda_out[s],size_trunk);
+    		}
+    		for(int s=0;s<max_stream;s++){
+    			int trunk_id = round * NUMBER_OF_STREAM + s;
+    			long long size_trunk = min(memory_trunk_size,size-trunk_id*memory_trunk_size);
+
+    			cudaMemcpyAsync(out+trunk_id*memory_trunk_size*columns,cuda_out[s],size_trunk*columns,cudaMemcpyDeviceToHost,streams[s]);
+    		}
+    	}
+
+    	for(int s=0;s<NUMBER_OF_STREAM;s++){
+    		cudaFree(cuda_in[s]);
+    		cudaFree(cuda_out[s]);
+    	}
+
+    free(in_ptr);
     free(inv[0]);
     free(mtx[0]);
     free(inv);
