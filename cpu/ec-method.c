@@ -187,6 +187,7 @@ size_t ec_method_batch_encode(size_t size, uint32_t columns, uint32_t total_row,
     uint8_t * in_ptr = in;
     size /= EC_METHOD_CHUNK_SIZE * columns;
 
+    printf("EC_METHOD_CHUNK:%d EC_METHOD_WIDTH:%d\n",EC_METHOD_CHUNK_SIZE,EC_METHOD_WIDTH);
     for(j = 0;j < size; j++){
 
         for (row = 0;row < total_row;row++){
