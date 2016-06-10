@@ -7,14 +7,18 @@
   later), or the GNU General Public License, version 2 (GPLv2), in all
   cases as published by the Free Software Foundation.
 */
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <unistd.h>
 #include "ec-gf.h"
 #include "ec-method.h"
+#include "thpool.h"
+#include <sched.h>
 
-
+static threadpool thpool;
 static uint32_t GfPow[EC_GF_SIZE << 1];
 static uint32_t GfLog[EC_GF_SIZE << 1];
 
@@ -34,6 +38,7 @@ void ec_method_initialize(void)
         GfPow[i + EC_GF_SIZE - 1] = GfPow[i];
         GfLog[GfPow[i] + EC_GF_SIZE - 1] = GfLog[GfPow[i]] = i;
     }
+    thpool = thpool_init(4);
 }
 
 static uint32_t ec_method_mul(uint32_t a, uint32_t b)
@@ -98,6 +103,7 @@ size_t ec_method_parallel_encode(size_t size, uint32_t columns, uint32_t row, ui
     size /= EC_METHOD_CHUNK_SIZE * columns;
     row++;
 
+
     for(i=0;i<processor_count;i++){
             params[i] = (ec_encode_param_t){
             .size = size/processor_count + (i< (size%processor_count)),
@@ -106,6 +112,7 @@ size_t ec_method_parallel_encode(size_t size, uint32_t columns, uint32_t row, ui
             .in = in_ptr,
             .out = out_ptr
         };
+
         //printf("%u %x\n",param.size,param.in);
        // printf("%x\n",in);
         in_ptr += EC_METHOD_CHUNK_SIZE * params[i].size * columns;
@@ -160,6 +167,11 @@ size_t ec_method_batch_parallel_encode(size_t size, uint32_t columns, uint32_t t
     size /= EC_METHOD_CHUNK_SIZE * columns;
     off=0;
 
+    pthread_attr_t attr;
+    cpu_set_t cpus;
+    pthread_attr_init(&attr);
+
+
     for(i=0;i<processor_count;i++){
             params[i] = (ec_encode_batch_param_t){
             .size = size/processor_count + (i< (size%processor_count)),
@@ -169,13 +181,22 @@ size_t ec_method_batch_parallel_encode(size_t size, uint32_t columns, uint32_t t
             .out = out,
             .off = off
         };
+
         in += EC_METHOD_CHUNK_SIZE * params[i].size * columns;
         off += EC_METHOD_CHUNK_SIZE * params[i].size;
-        pthread_create(threads+i,NULL,ec_method_batch_single_encode,(void *)(params+i));
+        //thpool_add_work(thpool,ec_method_batch_single_encode,(void *)(params+i));
+        CPU_ZERO(&cpus);
+        CPU_SET(i,&cpus);
+        pthread_attr_setaffinity_np(&attr,sizeof(cpu_set_t),&cpus);
+
+        pthread_create(threads+i,&attr,ec_method_batch_single_encode,(void *)(params+i));
     }
+    //thpool_wait(thpool);
+
     for(i=0;i<processor_count;i++){
         pthread_join(threads[i],NULL);
     }
+
     free(threads);
     free(params);
     return size * EC_METHOD_CHUNK_SIZE;
@@ -187,7 +208,7 @@ size_t ec_method_batch_encode(size_t size, uint32_t columns, uint32_t total_row,
     uint8_t * in_ptr = in;
     size /= EC_METHOD_CHUNK_SIZE * columns;
 
-    printf("EC_METHOD_CHUNK:%d EC_METHOD_WIDTH:%d\n",EC_METHOD_CHUNK_SIZE,EC_METHOD_WIDTH);
+    //printf("EC_METHOD_CHUNK:%d EC_METHOD_WIDTH:%d\n",EC_METHOD_CHUNK_SIZE,EC_METHOD_WIDTH);
     for(j = 0;j < size; j++){
 
         for (row = 0;row < total_row;row++){
