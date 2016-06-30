@@ -6,13 +6,19 @@
 #include <sys/time.h>
 #include <sys/sysinfo.h>
 
-#define COLUMN (64)
-#define ROW (64 + 16)
-#define DATA_SIZE (1<<30)
+#define COLUMN (32)
+#define ROW (32 + 8)
+#define DATA_SIZE ((1<<30) - (1<<30)%(EC_METHOD_CHUNK_SIZE * COLUMN))
 
 uint8_t *decoded,*data;
 uint8_t * output[ROW];
-uint32_t row[ROW];
+uint8_t * out_ptr[ROW];
+uint8_t row[ROW];
+int g_seed = 1;
+inline int fastrand(){
+    g_seed = (214013 * g_seed + 2531011);
+    return (g_seed>>16) & 0xFF;
+}
 void init(){
     int i;
 
@@ -25,11 +31,12 @@ void init(){
     }
     ec_method_initialize();
 
+    //memset(data,0xaa,sizeof(data));
 
     for(i=0;i<DATA_SIZE;i++)
-        data[i] = 0xaa;
-}
+        data[i] = fastrand();
 
+}
 
 int main(int argc,char *argv[]){
 
@@ -37,36 +44,47 @@ int main(int argc,char *argv[]){
     size_t size;
     struct timeval begin,end,result;
     double total_time;
+    int SEG_SIZE = 1<<20;
 
+    srand(0);
 
     init();
     printf("Finish init\n");
 
+
+
     gettimeofday(&begin,NULL);
-    if(argc > 1 && !strcmp(argv[1],"-p"))
-        size = ec_method_batch_parallel_encode(DATA_SIZE, COLUMN, ROW, data, output,get_nprocs());
-    else
-        size = ec_method_batch_encode(DATA_SIZE, COLUMN, ROW, data, output);
+    for(i=0;i<DATA_SIZE/SEG_SIZE;i++){
+        for(j=0;j<ROW;j++)
+            out_ptr[j] = output[j] + SEG_SIZE/COLUMN * i;
+        size = ec_method_batch_encode(SEG_SIZE, COLUMN, ROW,row, data + i*SEG_SIZE ,out_ptr);
+    }
 
     gettimeofday(&end,NULL);
     timersub(&end,&begin,&result);
 
     printf("%sencode cost:%ld.%06lds\n",(argc>1 && !strcmp(argv[1],"-p")?"parallel ":""),result.tv_sec,result.tv_usec);
+    double time = result.tv_sec + result.tv_usec * 1e-6;
+    printf("Encode Bandwidth:%.2fMB/s\n",DATA_SIZE / 1e6 / time);
 
 
     gettimeofday(&begin,NULL);
-    if(argc > 1 && !strcmp(argv[1],"-p"))
-        ec_method_parallel_decode(size, COLUMN, row, output, decoded,get_nprocs());
-    else
-        ec_method_decode(size,COLUMN,row,output,decoded);
+    for(i=0;i<DATA_SIZE/SEG_SIZE;i++) {
+        for(j=0;j<ROW;j++)
+            out_ptr[j] = output[j] + SEG_SIZE/COLUMN * i;
+        ec_method_decode(SEG_SIZE / COLUMN, COLUMN, row, out_ptr, decoded + i*SEG_SIZE );
+    }
 
     gettimeofday(&end,NULL);
     timersub(&end,&begin,&result);
 
     printf("%sdecode cost:%ld.%06lds\n",(argc>1 && !strcmp(argv[1],"-p")?"parallel ":""),result.tv_sec,result.tv_usec);
 
-    printf("Checked:%s\n",memcmp(data,decoded,DATA_SIZE)==0?"ok":"error");
+    time = result.tv_sec + result.tv_usec * 1e-6;
+    printf("Decode Bandwidth:%.2fMB/s\n",DATA_SIZE / 1e6 / time);
 
+
+    printf("Checked:%s\n",memcmp(data,decoded,DATA_SIZE)==0?"ok":"error");
 
     return 0;
 }
