@@ -46,7 +46,7 @@ int main(int argc,char *argv[]){
     double total_time;
     int SEG_SIZE = 1<<20;
 
-    srand(0);
+    //srand(0);
 
     init();
     printf("Finish init\n");

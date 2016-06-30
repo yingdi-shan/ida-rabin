@@ -234,72 +234,94 @@ static void ec_method_single_decode(void *param)
     }
 }
 
-static cache;
+
+typedef struct _inv_cache{
+    uint8_t ** inv;
+    uint8_t * dummy;
+    uint32_t columns;
+    uint8_t *rows;
+}inv_cache_t;
+
+static inv_cache_t cache;
+
+
 size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
                         uint8_t ** in, uint8_t * out)
 {
     uint32_t i, j, k, off, last, value;
     uint32_t f;
+    char cached = 1;
+
     uint8_t **inv;
     uint8_t **mtx;
     uint8_t *dummy;
 
+    if(cache.columns == columns){
+        for(i=0;i<columns;i++)
+            if(rows[i] != cache.rows[i]) {
+                cached = 0;
+                break;
+            }
+    }else
+        cached = 0;
+
     size /= EC_METHOD_CHUNK_SIZE;
 
-    //Use some tricks to allocate 2-d array which is cache-friendly.
-    inv = (uint8_t **)malloc(sizeof(uint8_t *) *EC_METHOD_MAX_FRAGMENTS);
-    mtx = (uint8_t **)malloc(sizeof(uint8_t *) *EC_METHOD_MAX_FRAGMENTS);
-    dummy = malloc(EC_METHOD_CHUNK_SIZE * sizeof(uint8_t));
+    if(!cached) {
+        //Use some tricks to allocate 2-d array which is cache-friendly.
+        inv = (uint8_t **) malloc(sizeof(uint8_t *) * EC_METHOD_MAX_FRAGMENTS);
+        mtx = (uint8_t **) malloc(sizeof(uint8_t *) * EC_METHOD_MAX_FRAGMENTS);
+        dummy = malloc(EC_METHOD_CHUNK_SIZE * sizeof(uint8_t));
 
-    inv[0] = (uint8_t *)malloc((EC_METHOD_MAX_FRAGMENTS + 1)*EC_METHOD_MAX_FRAGMENTS * sizeof(uint8_t));
-    mtx[0] = (uint8_t *)malloc(EC_METHOD_MAX_FRAGMENTS*EC_METHOD_MAX_FRAGMENTS * sizeof(uint8_t ));
+        inv[0] = (uint8_t *) malloc((EC_METHOD_MAX_FRAGMENTS + 1) * EC_METHOD_MAX_FRAGMENTS * sizeof(uint8_t));
+        mtx[0] = (uint8_t *) malloc(EC_METHOD_MAX_FRAGMENTS * EC_METHOD_MAX_FRAGMENTS * sizeof(uint8_t));
 
-    for(i=0;i<EC_METHOD_MAX_FRAGMENTS;i++)
-        inv[i] = (*inv + (EC_METHOD_MAX_FRAGMENTS+1) * i),mtx[i]=(*mtx + EC_METHOD_MAX_FRAGMENTS * i);
+        for (i = 0; i < EC_METHOD_MAX_FRAGMENTS; i++)
+            inv[i] = (*inv + (EC_METHOD_MAX_FRAGMENTS + 1) * i), mtx[i] = (*mtx + EC_METHOD_MAX_FRAGMENTS * i);
 
 
-    for(i=0;i<EC_METHOD_MAX_FRAGMENTS;i++){
-        for(j=0;j<EC_METHOD_MAX_FRAGMENTS;j++)
-            inv[i][j]=mtx[i][j]=0;
-        inv[i][EC_METHOD_MAX_FRAGMENTS] = 0;
-    }
-    for(i=0;i<EC_METHOD_CHUNK_SIZE;i++)
-        dummy[i]=0;
-
-    for (i = 0; i < columns; i++)
-    {
-        inv[i][i] = 1;
-        inv[i][columns] = 1;
-    }
-    for (i = 0; i < columns; i++)
-    {
-        mtx[i][columns - 1] = 1;
-        for (j = columns - 1; j > 0; j--)
-        {
-            mtx[i][j - 1] = ec_method_mul(mtx[i][j], rows[i] + 1);
+        for (i = 0; i < EC_METHOD_MAX_FRAGMENTS; i++) {
+            for (j = 0; j < EC_METHOD_MAX_FRAGMENTS; j++)
+                inv[i][j] = mtx[i][j] = 0;
+            inv[i][EC_METHOD_MAX_FRAGMENTS] = 0;
         }
-    }
+        for (i = 0; i < EC_METHOD_CHUNK_SIZE; i++)
+            dummy[i] = 0;
 
-    for (i = 0; i < columns; i++)
-    {
-        f = mtx[i][i];
-        for (j = 0; j < columns; j++)
-        {
-            mtx[i][j] = ec_method_div(mtx[i][j], f);
-            inv[i][j] = ec_method_div(inv[i][j], f);
+        for (i = 0; i < columns; i++) {
+            inv[i][i] = 1;
+            inv[i][columns] = 1;
         }
-        for (j = 0; j < columns; j++)
-        {
-            if (i != j)
-            {
-                f = mtx[j][i];
-                for (k = 0; k < columns; k++)
-                {
-                    mtx[j][k] ^= ec_method_mul(mtx[i][k], f);
-                    inv[j][k] ^= ec_method_mul(inv[i][k], f);
+        for (i = 0; i < columns; i++) {
+            mtx[i][columns - 1] = 1;
+            for (j = columns - 1; j > 0; j--) {
+                mtx[i][j - 1] = ec_method_mul(mtx[i][j], rows[i] + 1);
+            }
+        }
+
+        for (i = 0; i < columns; i++) {
+            f = mtx[i][i];
+            for (j = 0; j < columns; j++) {
+                mtx[i][j] = ec_method_div(mtx[i][j], f);
+                inv[i][j] = ec_method_div(inv[i][j], f);
+            }
+            for (j = 0; j < columns; j++) {
+                if (i != j) {
+                    f = mtx[j][i];
+                    for (k = 0; k < columns; k++) {
+                        mtx[j][k] ^= ec_method_mul(mtx[i][k], f);
+                        inv[j][k] ^= ec_method_mul(inv[i][k], f);
+                    }
                 }
             }
         }
+        cache.inv = inv;
+        cache.dummy = dummy;
+        cache.rows = rows;
+        cache.columns = columns;
+    }else{
+        inv = cache.inv;
+        dummy = cache.dummy;
     }
 
     ec_decode_param_t *params = malloc(sizeof(ec_decode_param_t)*worker_pool->num_of_threads);
@@ -330,11 +352,13 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
 
     //free(threads);
     free(params);
-    free(dummy);
-    free(inv[0]);
-    free(mtx[0]);
-    free(inv);
-    free(mtx);
+    //free(dummy);
+    //free(inv[0]);
+    if(!cached){
+        free(mtx[0]);
+        free(mtx);
+    }
+
 
     return size * EC_METHOD_CHUNK_SIZE * columns;
 }
