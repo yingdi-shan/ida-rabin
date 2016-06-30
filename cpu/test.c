@@ -44,7 +44,7 @@ int main(int argc,char *argv[]){
     size_t size;
     struct timeval begin,end,result;
     double total_time;
-    int SEG_SIZE = 1<<20;
+    int SEG_SIZE = 1<<30;
 
     //srand(0);
 

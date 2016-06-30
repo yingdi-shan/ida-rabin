@@ -243,6 +243,7 @@ typedef struct _inv_cache{
 }inv_cache_t;
 
 static inv_cache_t cache;
+static char cache_inited = 0;
 
 
 size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
@@ -256,7 +257,9 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
     uint8_t **mtx;
     uint8_t *dummy;
 
-    if(cache.columns == columns){
+    if(!cache_inited)
+        cached = 0;
+    else if(cache.columns == columns){
         for(i=0;i<columns;i++)
             if(rows[i] != cache.rows[i]) {
                 cached = 0;
@@ -315,10 +318,16 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
                 }
             }
         }
+        if(cache_inited) {
+            free(cache.inv[0]);
+            free(cache.inv);
+            free(cache.dummy);
+        }
         cache.inv = inv;
         cache.dummy = dummy;
         cache.rows = rows;
         cache.columns = columns;
+        cache_inited = 1;
     }else{
         inv = cache.inv;
         dummy = cache.dummy;
