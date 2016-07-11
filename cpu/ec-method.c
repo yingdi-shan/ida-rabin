@@ -1,5 +1,4 @@
 /*
-  Copyright (c) 2012-2014 DataLab, s.l. <http://www.datalab.es>
   This file is part of GlusterFS.
 
   This file is licensed to you under your choice of the GNU Lesser
@@ -21,7 +20,8 @@
 static worker_pool_t worker_pool;
 static uint32_t GfPow[EC_GF_SIZE << 1];
 static uint32_t GfLog[EC_GF_SIZE << 1];
-
+//Initialize threadpool and the table to do arithemetic operation
+//on Galios Field.
 void ec_method_initialize(void)
 {
     uint32_t i;
@@ -38,9 +38,9 @@ void ec_method_initialize(void)
         GfPow[i + EC_GF_SIZE - 1] = GfPow[i];
         GfLog[GfPow[i] + EC_GF_SIZE - 1] = GfLog[GfPow[i]] = i;
     }
-    worker_pool = worker_pool_init(4);
+    worker_pool = worker_pool_init(get_nprocs());
 }
-
+//Calculate the multiply of a and b on GF(2^8)
 static uint32_t ec_method_mul(uint32_t a, uint32_t b)
 {
     if (a && b)
@@ -51,6 +51,7 @@ static uint32_t ec_method_mul(uint32_t a, uint32_t b)
     return 0;
 }
 
+//Calculate the division of a and b on GF(2^8)
 static uint32_t ec_method_div(uint32_t a, uint32_t b)
 {
     if (b)
@@ -70,8 +71,8 @@ struct ec_encode_param{
     uint8_t * in, * out;
 };
 typedef struct ec_encode_param ec_encode_param_t;
+//Encode on single thread.
 static void ec_method_single_encode(void * param){
-
     uint32_t i, j;
     ec_encode_param_t *ec_param = (ec_encode_param_t *)param;
     size_t size = ec_param->size;
@@ -92,12 +93,11 @@ static void ec_method_single_encode(void * param){
         out += EC_METHOD_CHUNK_SIZE;
     }
 }
-
+//Encode on multiple threads.
 size_t ec_method_encode(size_t size, uint32_t columns, uint32_t row, uint8_t * in, uint8_t * out)
 {
     uint32_t i, j;
     uint8_t * in_ptr=in,*out_ptr=out;
-    //pthread_t *threads = malloc(sizeof(pthread_t)*processor_count);
     ec_encode_param_t *params = malloc(sizeof(ec_encode_param_t)*worker_pool->num_of_threads);
     size /= EC_METHOD_CHUNK_SIZE * columns;
     row++;
@@ -112,8 +112,6 @@ size_t ec_method_encode(size_t size, uint32_t columns, uint32_t row, uint8_t * i
             .out = out_ptr
         };
 
-        //printf("%u %x\n",param.size,param.in);
-       // printf("%x\n",in);
         in_ptr += EC_METHOD_CHUNK_SIZE * params[i].size * columns;
         out_ptr += EC_METHOD_CHUNK_SIZE * params[i].size;
     }
@@ -131,6 +129,7 @@ struct ec_encode_batch_param{
     uint8_t ** out;
 };
 typedef struct ec_encode_batch_param ec_encode_batch_param_t;
+//Batched encode on single thread.
 static void ec_method_batch_single_encode(void * param)
 {
     uint32_t i, j, row;
@@ -157,6 +156,7 @@ static void ec_method_batch_single_encode(void * param)
         in += EC_METHOD_CHUNK_SIZE * columns;
     }
 }
+//Batched encode on multiple threads.
 size_t ec_method_batch_encode(size_t size, uint32_t columns, uint32_t total_row, uint8_t * rows,
                               uint8_t * in, uint8_t ** out)
 {
@@ -196,6 +196,7 @@ struct ec_decode_param{
 };
 typedef struct ec_decode_param ec_decode_param_t;
 
+//Decode on single thread.
 static void ec_method_single_decode(void *param)
 {
     ec_decode_param_t * ec_param = (ec_decode_param_t *)param;
@@ -242,10 +243,12 @@ typedef struct _inv_cache{
     uint8_t *rows;
 }inv_cache_t;
 
+//This is the cache which records the inversion of the matrix to prevent from
+//Gaussian elimination every time.
 static inv_cache_t cache;
 static char cache_inited = 0;
 
-
+//Decode on multiple threads.
 size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
                         uint8_t ** in, uint8_t * out)
 {
@@ -257,6 +260,7 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
     uint8_t **mtx;
     uint8_t *dummy;
 
+    //Judge whether cache miss.
     if(!cache_inited)
         cached = 0;
     else if(cache.columns == columns){
@@ -270,6 +274,7 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
 
     size /= EC_METHOD_CHUNK_SIZE;
 
+    //If cache miss,do Gaussian Elimination on GF(2^8)
     if(!cached) {
         //Use some tricks to allocate 2-d array which is cache-friendly.
         inv = (uint8_t **) malloc(sizeof(uint8_t *) * EC_METHOD_MAX_FRAGMENTS);

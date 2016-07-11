@@ -22,6 +22,7 @@ inline int fastrand(){
 void init(){
     int i;
 
+    //Data should be aligned in order to use SIMD instructions.
     posix_memalign(&decoded,32,DATA_SIZE);
     posix_memalign(&data,32,DATA_SIZE);
 
@@ -30,8 +31,6 @@ void init(){
         row[i] = i;
     }
     ec_method_initialize();
-
-    //memset(data,0xaa,sizeof(data));
 
     for(i=0;i<DATA_SIZE;i++)
         data[i] = fastrand();
@@ -46,8 +45,8 @@ int main(int argc,char *argv[]){
     double total_time;
     int SEG_SIZE = 1<<30;
 
-    //srand(0);
 
+    //Produce random data.
     init();
     printf("Finish init\n");
 
@@ -84,6 +83,7 @@ int main(int argc,char *argv[]){
     printf("Decode Bandwidth:%.2fMB/s\n",DATA_SIZE / 1e6 / time);
 
 
+    //Check whether data is correct.
     printf("Checked:%s\n",memcmp(data,decoded,DATA_SIZE)==0?"ok":"error");
 
     return 0;

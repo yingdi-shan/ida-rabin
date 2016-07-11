@@ -1,5 +1,4 @@
 /*
-   Copyright (c) 2012-2014 DataLab, s.l. <http://www.datalab.es>
    This file is part of GlusterFS.
 
    This file is licensed to you under your choice of the GNU Lesser
@@ -11,6 +10,14 @@
 #include <inttypes.h>
 #include <string.h>
 #include "ec-gf.h"
+
+/*
+    There are 256 functions here,which represents 256 kinds of operations
+    on Galois Field.They are all expanded to improve performance.
+    encode_t represents the bits that a single operation should operate.It
+    should be set to the maximal bits that a SIMD instruction can support.
+ */
+
 
 static void gf8_muladd_00(uint8_t * out, uint8_t * in, unsigned int width)
 {

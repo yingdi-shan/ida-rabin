@@ -1,5 +1,7 @@
 //
 // Created by syd on 16-6-28.
+// This file contains a simple implementation of a worker pool, where threads
+// all allocated at beginning, which reduce large overhead of threads creation.
 //
 
 #ifndef IDA_RABIN_EC_WORKER_H

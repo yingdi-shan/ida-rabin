@@ -1,10 +1,13 @@
-GCC_FLAG += -O3  -msse4.2 -mavx -mavx2
+GCC_FLAG += -O3 -march=native
 
 test : main
-	./main -p
+	./main
 
 main : ec-method.o test.o ec-gf.o
 	gcc -o main ec-method.o test.o ec-gf.o -lpthread $(GCC_FLAG)
+
+memory: memory.c
+	gcc -o memory memory.c $(GCC_FLAG)
 
 test.o: test.c ec-method.h ec-gf.h
 	gcc -c test.c $(GCC_FLAG)
@@ -16,7 +19,5 @@ ec-gf.o : ec-gf.c ec-gf.h
 	gcc -c ec-gf.c $(GCC_FLAG)
 
 clean :
-	$(RM) main ec-method.o ec-gf.o test.o
+	$(RM) main memory ec-method.o ec-gf.o test.o
 
-avx : avx.c
-	gcc -o avx avx.c $(GCC_FLAG)
