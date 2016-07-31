@@ -279,7 +279,7 @@ size_t ec_method_decode(size_t size, uint32_t columns, uint8_t * rows,
         //Use some tricks to allocate 2-d array which is cache-friendly.
         inv = (uint8_t **) malloc(sizeof(uint8_t *) * EC_METHOD_MAX_FRAGMENTS);
         mtx = (uint8_t **) malloc(sizeof(uint8_t *) * EC_METHOD_MAX_FRAGMENTS);
-        dummy = malloc(EC_METHOD_CHUNK_SIZE * sizeof(uint8_t));
+        posix_memalign(&dummy,32,EC_METHOD_CHUNK_SIZE * sizeof(uint8_t));
 
         inv[0] = (uint8_t *) malloc((EC_METHOD_MAX_FRAGMENTS + 1) * EC_METHOD_MAX_FRAGMENTS * sizeof(uint8_t));
         mtx[0] = (uint8_t *) malloc(EC_METHOD_MAX_FRAGMENTS * EC_METHOD_MAX_FRAGMENTS * sizeof(uint8_t));
