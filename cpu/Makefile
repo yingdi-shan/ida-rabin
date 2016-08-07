@@ -1,4 +1,4 @@
-GCC_FLAG += -O3 -march=native
+GCC_FLAG += -O3 -mavx2
 
 test : main
 	./main

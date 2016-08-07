@@ -28,12 +28,14 @@ void init(){
 
     for(i=0;i<ROW;i++){
         posix_memalign(&output[i],32,DATA_SIZE/COLUMN);
+		memset(output[i],0,DATA_SIZE/COLUMN);
         row[i] = i;
     }
     ec_method_initialize();
 
     for(i=0;i<DATA_SIZE;i++)
         data[i] = fastrand();
+	memset(decoded,0,DATA_SIZE);
 
 }
 
@@ -50,6 +52,7 @@ int main(int argc,char *argv[]){
     init();
     printf("Finish init\n");
 
+	printf("Size:%d\n",sizeof(encode_t));
 
 
     gettimeofday(&begin,NULL);
